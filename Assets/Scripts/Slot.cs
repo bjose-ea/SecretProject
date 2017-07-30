@@ -5,10 +5,11 @@ using UnityEngine;
 public class Slot : MonoBehaviour
 {
 	public bool isFilled = false;
-	public GameObject hero;
+	public Heroes hero;
 	public Vector3 position;
 	public int PlayerID = 1;
-	public string herotype;
+	public int slotIndex;
+//	public string herotype;
 	public bool lockedon = false;
 	public int MatchCount;
 	public Animator Matchfeedanim;
@@ -54,34 +55,27 @@ public class Slot : MonoBehaviour
 
 	public void Fill (GameObject h, Vector3 pos, int playerID)
 	{  
-		//Debug.Log ("hhh");
 		if (!isFilled)
 			isFilled = true;
 
-		hero = h;
+		hero = h.GetComponent<Heroes>();
 		position = pos;
 		SetPlayerID (playerID);
 		CanInteractible = true;
-		if (hero)
-		if (hero.gameObject.GetComponent<Heroes> ()) {
-			herotype = hero.gameObject.GetComponent<Heroes> ().type;
-			hero.gameObject.GetComponent<Heroes> ().itslot = this;
-		}
-            
+		hero.currentSlot = this;  
 	}
 
 	public void UnFill ()
 	{
 		isFilled = false;
 		hero = null;
-		herotype = null; 
 	}
 
 	public void MoveTo (Slot s, float seconds, bool wantDataTransfer, bool Return)
 	{
 		//Debug.Log("Swapp"+hero);
 
-		h = hero;
+		h = hero.gameObject;
 		destination = s;
 		driftseconds = seconds;
 		if (Return)

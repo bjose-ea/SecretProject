@@ -2,11 +2,24 @@
 using System.Collections.Generic;
 using UnityEngine;
 
+public enum HeroType
+{
+	BLUE = 0,
+	BROWN = 1,
+	GREEN = 2,
+	RED = 3,
+	VIOLET = 4,
+	YELLOW = 5
+}
+
+
 public class Heroes : MonoBehaviour
 {
-	public string type;
-	public Slot itslot;
-	public Slot destinationslot;
+	public HeroType heroType;
+//	public string type;
+	public Slot currentSlot;
+	public Slot destinationSlot;
+	public int id;
 	//public bool
 	public float Health = 100;
 	// Use this for initialization
@@ -22,9 +35,6 @@ public class Heroes : MonoBehaviour
 			GotMatch (3);
 
 		}
-
-
-
 	}
 
 	public void GotMatch (int counter)
@@ -43,7 +53,7 @@ public class Heroes : MonoBehaviour
 
 	void match3Action ()
 	{
-		if (type == "yellow") {
+		if (heroType == HeroType.YELLOW) {
 			
 		}
 		Debug.Log ("Doaction");
@@ -51,7 +61,7 @@ public class Heroes : MonoBehaviour
 
 	void match4Action ()
 	{
-		if (type == "yellow") {
+		if (heroType == HeroType.YELLOW) {
 
 		}
 

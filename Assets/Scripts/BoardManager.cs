@@ -1,6 +1,7 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using System;
 
 public class BoardManager : MonoBehaviour
 {
@@ -22,24 +23,28 @@ public class BoardManager : MonoBehaviour
 	public int Columns = 6;
 	public GameObject SlotPrefab;
 	public GameObject[] HeroesTypes;
+//	public int[] randomArrayOfPlayerOneHeroes;
+//	public int[] randomArrayOfPlayerOneHeroes;
 	public GameObject HighLighterprefab;
 	public int PlayerControlID;
-
+	public List<PlayerBoard> playerBoards;
+	public GameObject playerBoardPrefab;
 	float tweakFactor = 0.5f;
 	Swipe swipeDirection = Swipe.None;
-
+//	private bool isGameOver;
 
 	GameObject[] HighLighter;
-	List<GameObject> heroPool = new List<GameObject> ();
-	public Slot[,] Player1slots;
-	public Slot[,] Player2slots;
+//	public List<Heroes> heroPool = new List<Heroes> ();
+//	public Slot[,] Player1slots;
+//	public Slot[,] Player2slots;
 	[HideInInspector]
 	public bool start = false;
 	public float cascadecheckSpeed = 0.5f;
 	public float cascadeobjectspeed = 0.6f;
+	bool syncPending = false;
+	PhotonView _photonView;
 
-
-	bool anyMoved = false;
+	public bool anyMoved = false;
 	bool renewBoard = false;
 	//Input System requirements
 	[HideInInspector]
@@ -61,37 +66,69 @@ public class BoardManager : MonoBehaviour
 
 	#region Initialization stuffs
 
-	void PoolShuffle ()
-	{
-		System.Random rand = new System.Random ();
-		int r = heroPool.Count;
-		while (r > 1) {
-			r--;
+//	void PoolShuffle ()
+//	{
+//		System.Random rand = new System.Random ();
+//		int r = heroPool.Count;
+//		while (r > 1) {
+//			r--;
+//
+//			int n = rand.Next (r + 1);
+//			Heroes val = heroPool [n];
+//			heroPool [n] = heroPool [r];
+//			heroPool [r] = val;
+//		}
+//	}
 
-			int n = rand.Next (r + 1);
-			GameObject val = heroPool [n];
-			heroPool [n] = heroPool [r];
-			heroPool [r] = val;
+	int[] GetRandomArrayOfHeroes()
+	{
+		int[] temp = new int[Rows*Columns];
+		for(int i = 0; i < temp.Length; i++)
+		{
+			temp[i] = UnityEngine.Random.Range(0, Enum.GetNames(typeof(HeroType)).Length);
 		}
+		return temp;
 	}
 
-	void IntializingHeroPool (int rows, int cols, List<GameObject> HeroList, bool Shuffle)
+	void IntializingHeroPool (int rows, int cols, List<Heroes> HeroList, bool Shuffle)
 	{
 		int numCopies = (rows * cols);
 		GameObject HeroPoolParent = new GameObject ("HeroPoolParent");
-
-		for (int i = 0; i < numCopies; i++) {
-			for (int j = 0; j < HeroesTypes.Length; j++) {
-				GameObject o = (GameObject)Instantiate (HeroesTypes [j], new Vector3 (-10, -10, 0), HeroesTypes [j].transform.rotation);
+		for (int i = 0; i < numCopies; i++) 
+		{
+			for (int j = 0; j < HeroesTypes.Length; j++) 
+			{
+				GameObject o = (GameObject)Instantiate (HeroesTypes [j]);
 
 				o.SetActive (false);
 				o.transform.parent = HeroPoolParent.transform;
-				HeroList.Add (o);
+				HeroList.Add (o.GetComponent<Heroes>());
+				o.GetComponent<Heroes>().heroType = (HeroType)j;
 			}
 		}
-		if (Shuffle)
-			PoolShuffle ();
+//		if (Shuffle)
+//			PoolShuffle ();
+
 	}
+
+	/// <summary>
+	/// 	Callback raised by the Photon server when any of the custom property is changed for any player
+	/// 	currently residing in the same room and is sent to all the clients...
+	/// </summary>
+	/// <param name="playerAndUpdatedProps">Player and updated properties as hashtable</param>
+	void OnPhotonPlayerPropertiesChanged(object[] playerAndUpdatedProps) 
+	{
+		PhotonPlayer remotePlayer 				 = playerAndUpdatedProps[0] as PhotonPlayer;
+		ExitGames.Client.Photon.Hashtable  props = playerAndUpdatedProps[1] as ExitGames.Client.Photon.Hashtable;
+
+		if(props != null && props.ContainsKey(PlayerProperty.PLAYER_BOARD_HEROES))
+		{
+			playerBoards[remotePlayer.GetPlayersIndex()].randomArrayOfHeroes = remotePlayer.GetPlayerBoardHeroes();
+			//Filling heroes on the board and saving them into "slots" for both Player 1 and player 2
+			InitiaizingSlots (remotePlayer.GetPlayersIndex());
+		}
+	}
+
 
 	void InitializingPointers ()
 	{
@@ -105,98 +142,116 @@ public class BoardManager : MonoBehaviour
 	}
 
 
-	void InitiaizingSlots ()
+	void InitiaizingSlots (int i)
 	{
-		//Initializing slots array limit
-		Player1slots = new Slot[Columns, Rows];
-		Player2slots = new Slot[Columns, Rows];
-		GameObject p1slotsParent = new GameObject ("Player1SlotsParent");
-		GameObject p2slotsParent = new GameObject ("Player2SlotsParent");
+		Debug.Log("playerIndex>>" + i);
 
-		//List<GameObject> tempheroes = new List<GameObject>();
-		//Player 1 Spawning
+		float Yoffset = 0;
+		int index = 0;
+		Vector3 slotPos = new Vector3 (Columns, Rows, 0);
 		for (int r = 0; r < Rows; r++)
-			for (int c = 0; c < Columns; c++) {
-				Vector3 slotPos = new Vector3 (c, r, 0);
-
+		{
+			for (int c = 0; c < Columns; c++) 
+			{
+				slotPos = new Vector3 (c, r, 0);
 				//Initializing Slots and filing slots 2D array
 				GameObject sl = (GameObject)Instantiate (SlotPrefab, slotPos, SlotPrefab.transform.rotation);
-				sl.transform.parent = p1slotsParent.transform;
+				sl.transform.parent = playerBoards[i].transform;
 				sl.name = "p: " + 1 + " + slot (" + c + " , " + r + ")";
-				Player1slots [c, r] = sl.GetComponent<Slot> ();
+				playerBoards[i].PlayerSlots [c, r] = sl.GetComponent<Slot> ();
+				playerBoards[i].PlayerSlots [c, r].slotIndex = index;
 
-				//Initializing Heroes, setting other parameters for each slots (like player ID, Hero name, is filled)
-				for (int n = 0; n < heroPool.Count; n++) {
-					
-					GameObject o = heroPool [n];
-					if (!o.activeSelf) {
-						o.transform.position = new Vector3 (slotPos.x, slotPos.y, slotPos.z);
-						o.SetActive (true);
-
-						Player1slots [c, r].Fill (o, slotPos, 1);
-						Player1slots [c, r].c = c;
-						Player1slots [c, r].r = r;
-						o.name = o.name + "(" + c + ", " + r + ")";
-						//tempheroes.Add(o);
-						n = heroPool.Count + 1;
-					}
-				}
+				GameObject o = (GameObject)Instantiate (HeroesTypes[playerBoards[i].randomArrayOfHeroes [index]]);
+				o.transform.SetParent(playerBoards[i].PlayerSlots [c, r].gameObject.transform, false);
+				o.SetActive (true);
+				playerBoards[i].PlayerSlots [c, r].Fill (o, slotPos, i+1);
+				playerBoards[i].PlayerSlots [c, r].c = c;
+				playerBoards[i].PlayerSlots [c, r].r = r;
+				o.name = o.name + "(" + c + ", " + r + ")";
+				index++;
 
 			}
-
-		//Player 2 Spawning
-		for (int r = 0; r < Rows; r++)
-			for (int c = 0; c < Columns; c++) {
-				Vector3 slotPos = new Vector3 (c, 5 + DistanceBetweentwoBoards + r, 0);
-
-				//Initializing Slots and filing slots 2D array
-				GameObject sl = (GameObject)Instantiate (SlotPrefab, slotPos, SlotPrefab.transform.rotation);
-				sl.transform.parent = p2slotsParent.transform;
-				sl.name = "p: " + 2 + " + slot (" + c + " , " + r + ")";
-				Player2slots [c, r] = sl.GetComponent<Slot> ();
-
-				//Initializing Heroes, setting other parameters for each slots (like player ID, Hero name, is filled)
-				for (int n = 0; n < heroPool.Count; n++) {
-					GameObject o = heroPool [n];
-					if (!o.activeSelf) {
-						o.transform.position = new Vector3 (slotPos.x, slotPos.y, slotPos.z);
-						o.SetActive (true);
-
-						Player2slots [c, r].Fill (o, slotPos, 2);
-						Player2slots [c, r].c = c;
-						Player2slots [c, r].r = r;
-
-						o.name = o.name + "(" + c + ", " + r + ")";
-						//tempheroes.Add(o);
-						n = heroPool.Count + 1;
-					}
-				}
-
-			}
-
-
+		}
+		if(PhotonNetwork.player.GetPlayersIndex() == i)
+			Yoffset = 0;
+		else
+			Yoffset = DistanceBetweentwoBoards;
+		playerBoards[i].transform.position = new Vector3 (playerBoards[i].transform.position.x, playerBoards[i].transform.position.y + Yoffset, playerBoards[i].transform.position.z);
+			
 	}
 
 	#endregion
 
+	List<Slot> MatchSlot = new List<Slot> ();
 
-	void Start ()
+
+
+	void Awake()
 	{
+		_photonView = GetComponent<PhotonView>();
+//		isGameOver = true;
+	}
+
+	void OnEnable()
+	{
+		NetworkManager.OnRoomFullEvent += HandleStartGame;
+	}
+
+	void OnDisable()
+	{
+		NetworkManager.OnRoomFullEvent -= HandleStartGame;
+	}
+
+	void Start()
+	{
+
+		InitializeBoard();
+	}
+
+	void HandleStartGame()
+	{
+
+		if(PhotonNetwork.isMasterClient)
+		{
+			for(int i = 0; i < PhotonNetwork.playerList.Length; i++)
+			{
+				PhotonNetwork.playerList[i].SetPlayerBoardHeroes(GetRandomArrayOfHeroes());
+			}
+		}
+
+		UIManager.GetInstance().goWaitingPanel.SetActive(false);
+			
+	}
+
+	void InitializeBoard ()
+	{ 
+
 		//Pointers creation
 		InitializingPointers ();
 
-		// object Pooling
-		//Hero pooling and saving them into a list "heroPool"
-		IntializingHeroPool (Rows, Columns, heroPool, true);
 
+		playerBoards[0].PlayerSlots = new Slot[Columns, Rows];
+		playerBoards[1].PlayerSlots = new Slot[Columns, Rows];
 
-		//Filling heroes on the board and saving them into "slots" for both Player 1 and player 2
-		InitiaizingSlots ();
-        
+		PlayerControlID = PhotonNetwork.player.GetPlayersIndex() + 1;
+		if (PlayerControlID == 1)
+			tiles = playerBoards[0].PlayerSlots;
+		else
+			tiles = playerBoards[1].PlayerSlots;
+
 	}
+
+
 
 	void Update ()
 	{
+		/*/while (matched == true) {
+			//StartCheck (PlayerControlID);
+		}*/
+
+//		if(isGameOver)
+//			return;
+		
 		if (canInput) {
 			//FixingInputManager (PlayerControlID);
 			//SwipeInputManager (PlayerControlID, true);
@@ -206,10 +261,10 @@ public class BoardManager : MonoBehaviour
 
 		}
 
-		if (PlayerControlID == 1)
-			tiles = Player1slots;
-		else
-			tiles = Player2slots;
+//		if (PlayerControlID == 1)
+//			tiles = Player1slots;
+//		else
+//			tiles = Player2slots;
 		
 		PCDetectSwipe ();
 
@@ -221,7 +276,12 @@ public class BoardManager : MonoBehaviour
 
 		if (Input.GetKeyDown (KeyCode.A)) {////////BUG CRASHED
 
-			NewGridCheck (PlayerControlID);
+			//NewGridCheck (PlayerControlID);
+		}
+
+		if (Input.GetKeyDown (KeyCode.D)) {////////BUG CRASHED
+
+			StartCoroutine (RenewGrid (0));
 		}
 			
 	}
@@ -235,7 +295,7 @@ public class BoardManager : MonoBehaviour
 	[HideInInspector]
 	public Slot SelectedSlot;
 	[HideInInspector]
-	public GameObject SelectedHero;
+	public Heroes SelectedHero;
 	bool downfirst;
 	bool release;
 
@@ -303,8 +363,8 @@ public class BoardManager : MonoBehaviour
 		}
 		if ((Input.GetMouseButtonUp (0)) && slot1) {
 			release = true;
-			slot1.heroMoveTo (SelectedHero, driftseconds, false, false);
-			slot1.Fill (SelectedHero, slot1.position, slot1.PlayerID);
+			slot1.heroMoveTo (SelectedHero.gameObject, driftseconds, false, false);
+			slot1.Fill (SelectedHero.gameObject, slot1.position, slot1.PlayerID);
 			if (HighLighter [PID].activeSelf) {
 				HighLighter [PID].SetActive (false);
 			}
@@ -334,7 +394,7 @@ public class BoardManager : MonoBehaviour
 	{
 		//GameObject temphero = s2.hero;
 		//int tempplayerID = s2.PlayerID;
-		prev.Fill (s2.hero, prev.position, s2.PlayerID);
+		prev.Fill (s2.hero.gameObject, prev.position, s2.PlayerID);
 		//Debug.Log("gg");
 		//s1.Fill(s2.hero, s1.position, s1.PlayerID);
 		//s1.Fill(temphero, s1.position, tempplayerID);
@@ -352,9 +412,9 @@ public class BoardManager : MonoBehaviour
 	{
 		
 		if (PID == 1)
-			Slotlib = Player1slots;
+			Slotlib = playerBoards[0].PlayerSlots;
 		else if (PID == 2)
-			Slotlib = Player2slots;
+			Slotlib = playerBoards[1].PlayerSlots;
 			
 
 		if ((Input.GetMouseButtonDown (0)) && (!slot1)) {
@@ -550,24 +610,24 @@ public class BoardManager : MonoBehaviour
 		//Rows
 		if (r + 1 < Rows)
 		if (tiles [c, r + 1].isFilled)
-		if (s.herotype == tiles [c, r + 1].herotype) {
+		if (s.hero.heroType == tiles [c, r + 1].hero.heroType) {
 			r1 = true;
 		}	
 
 		if (r + 2 < Rows)
 		if (tiles [c, r + 2].isFilled)
-		if (s.herotype == tiles [c, r + 2].herotype) {
+		if (s.hero.heroType == tiles [c, r + 2].hero.heroType) {
 			r2 = true;
 		}
 
 		if (r - 1 >= 0)
 		if (tiles [c, r - 1].isFilled)
-		if (s.herotype == tiles [c, r - 1].herotype) {
+		if (s.hero.heroType == tiles [c, r - 1].hero.heroType) {
 			r3 = true;
 		}
 		if (r - 2 >= 0)
 		if (tiles [c, r - 2].isFilled)
-		if (s.herotype == tiles [c, r - 2].herotype) {
+		if (s.hero.heroType == tiles [c, r - 2].hero.heroType) {
 			r4 = true;
 		}
 
@@ -578,25 +638,25 @@ public class BoardManager : MonoBehaviour
 		//Columns
 		if (c + 1 < Columns)
 		if (tiles [c + 1, r].isFilled)
-		if (s.herotype == tiles [c + 1, r].herotype) {
+		if (s.hero.heroType == tiles [c + 1, r].hero.heroType) {
 			c1 = true;
 		}	
 
 		if (c + 2 < Columns)
 		if (tiles [c + 2, r].isFilled)
-		if (s.herotype == tiles [c + 2, r].herotype) {
+		if (s.hero.heroType == tiles [c + 2, r].hero.heroType) {
 			c2 = true;
 		}
 
 		if (c - 1 >= 0)
 		if (tiles [c - 1, r].isFilled)
-		if (s.herotype == tiles [c - 1, r].herotype) {
+		if (s.hero.heroType == tiles [c - 1, r].hero.heroType) {
 			c3 = true;
 		}
 
 		if (c - 2 >= 0)
 		if (tiles [c - 2, r].isFilled)
-		if (s.herotype == tiles [c - 2, r].herotype) {
+		if (s.hero.heroType == tiles [c - 2, r].hero.heroType) {
 			c4 = true;
 		}
 		if ((c1 && c2) || (c1 && c3) || (c3 && c4)) {
@@ -623,26 +683,20 @@ public class BoardManager : MonoBehaviour
 				HeroTransformSwap (slot1, slot2, true, false);
 
 				Reset (PlayerControlID);
-
+				StartCoroutine (NewGridCheck (PlayerControlID, driftseconds));
 				//Invoke ("callcheck", driftseconds);
-				Debug.Log ("Hogya");
+
 
 			} else {
 				HeroTransformSwap (slot1, slot2, false, true);
 				dataSwap (s1, s2);
 				Reset (PlayerControlID);
-				print ("nhi Hua");
 			}
 		} else
 			Reset (PlayerControlID);
 
 	}
 
-
-	void callcheck ()
-	{
-		//NewGridCheck (PlayerControlID);				
-	}
 
 	void Reset (int PID)
 	{
@@ -660,8 +714,8 @@ public class BoardManager : MonoBehaviour
 
 		k1 = s1;
 		k2 = s2;
-		h1 = k1.hero;
-		h2 = k2.hero;
+		h1 = k1.hero.gameObject;
+		h2 = k2.hero.gameObject;
 		//Debug.Log (h1 + " " + " " + h2);
 		s1.Fill (h2, k1.position, k1.PlayerID);
 		s2.Fill (h1, k2.position, k2.PlayerID);
@@ -814,237 +868,87 @@ public class BoardManager : MonoBehaviour
 
 	#endregion
 
-	#region OLD GridCheck and Generation
-
-	/*void GridCheck (int PID)
-	{
-		Slot[,] slots;
-		if (PID == 1)
-			slots = Player1slots;
-		else
-			slots = Player2slots;
-
-
-		int counter = 1;
-		//ROW CHECK///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-		for (int r = 0; r < Rows; r++) {
-			counter = 1;
-			for (int c = 1; c < Columns; c++) {
-				//if (!slots[c, r])
-				if (slots [c, r].PlayerID == PID)
-				if (slots [c, r] != null && slots [c - 1, r] != null) {
-					if (slots [c, r].herotype == slots [c - 1, r].herotype) {
-						counter++;
-						Debug.Log (counter);
-					} else {
-						counter = 1;
-					}
-
-					if (counter == 6) {
-
-						CheckSlotAndDeativate (slots [c, r], counter);
-						CheckSlotAndDeativate (slots [c - 1, r], counter);
-						CheckSlotAndDeativate (slots [c - 2, r], counter);
-						CheckSlotAndDeativate (slots [c - 3, r], counter);
-						CheckSlotAndDeativate (slots [c - 4, r], counter);
-						CheckSlotAndDeativate (slots [c - 5, r], counter);
-
-					} else if (counter == 5) {
-						CheckSlotAndDeativate (slots [c, r], counter);
-						CheckSlotAndDeativate (slots [c - 1, r], counter);
-						CheckSlotAndDeativate (slots [c - 2, r], counter);
-						CheckSlotAndDeativate (slots [c - 3, r], counter);
-						CheckSlotAndDeativate (slots [c - 4, r], counter);
-
-					} else if (counter == 4) {
-						CheckSlotAndDeativate (slots [c, r], counter);
-						CheckSlotAndDeativate (slots [c - 1, r], counter);
-						CheckSlotAndDeativate (slots [c - 2, r], counter);
-						CheckSlotAndDeativate (slots [c - 3, r], counter);
-
-
-					} else if (counter == 3) {
-
-						CheckSlotAndDeativate (slots [c, r], counter);
-						CheckSlotAndDeativate (slots [c - 1, r], counter);
-						CheckSlotAndDeativate (slots [c - 2, r], counter);
-					}
-
-
-				}
-
-
-			}
-		}
-
-		//COLUMN CHECK///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-		for (int c = 0; c < Columns; c++) {
-			counter = 1;
-			for (int r = 1; r < Rows; r++) {
-				if (slots [c, r].PlayerID == PID)
-				if (slots [c, r] != null && slots [c, r - 1] != null) {
-					if (slots [c, r].herotype == slots [c, r - 1].herotype) {
-						counter++;  
-						Debug.Log (counter);
-
-					} else {
-						counter = 1;
-					}
-
-					if (counter == 6) {
-
-						CheckSlotAndDeativate (slots [c, r], counter);
-						CheckSlotAndDeativate (slots [c, r - 1], counter);
-						CheckSlotAndDeativate (slots [c, r - 2], counter);
-						CheckSlotAndDeativate (slots [c, r - 3], counter);
-						CheckSlotAndDeativate (slots [c, r - 4], counter);
-						CheckSlotAndDeativate (slots [c, r - 5], counter);
-
-					} else if (counter == 5) {
-						CheckSlotAndDeativate (slots [c, r], counter);
-						CheckSlotAndDeativate (slots [c, r - 1], counter);
-						CheckSlotAndDeativate (slots [c, r - 2], counter);
-						CheckSlotAndDeativate (slots [c, r - 3], counter);
-						CheckSlotAndDeativate (slots [c, r - 4], counter);
-
-					} else if (counter == 4) {
-						CheckSlotAndDeativate (slots [c, r], counter);
-						CheckSlotAndDeativate (slots [c, r - 1], counter);
-						CheckSlotAndDeativate (slots [c, r - 2], counter);
-						CheckSlotAndDeativate (slots [c, r - 3], counter);
-
-
-					} else if (counter == 3) {
-
-						CheckSlotAndDeativate (slots [c, r], counter);
-						CheckSlotAndDeativate (slots [c, r - 1], counter);
-						CheckSlotAndDeativate (slots [c, r - 2], counter);
-					}
-
-				}
-			}
-
-		}
-
-
-	}
-
-	void CheckSlotAndDeativate (Slot sl, int counter)
-	{
-		
-		if (sl.hero != null) {
-			sl.hero.SetActive (false);
-			sl.hero = null;
-
-			Invoke ("RenewGrid", 0.5f);
-
-
-		}
-
-	}
-
-	void RenewGrid ()
-	{
-		bool anyMoved = false;
-		PoolShuffle ();
-		for (int r = 1; r < Rows; r++) {
-			for (int c = 0; c < Columns; c++) {
-				if (r == Rows - 1 && tiles [c, r].hero == null) {
-					Vector3 tilePos = new Vector3 (c, r, 0);
-					for (int n = 0; n < heroPool.Count; n++) {
-						GameObject o = heroPool [n];
-
-						if (!o.activeSelf) {
-							o.transform.position = new Vector3 (tilePos.x, tilePos.y, tilePos.z);
-							o.SetActive (true);
-							tiles [c, r].hero = o;
-							n = heroPool.Count + 1;
-						}
-					}
-				}
-
-				if (tiles [c, r].hero != null) {
-					if (tiles [c, r - 1].hero == null) {
-						tiles [c, r - 1].Fill (tiles [c, r].hero, tiles [c, r - 1].position, tiles [c, r - 1].PlayerID);
-						tiles [c, r - 1].hero.transform.position = new Vector3 (c, r - 1, 0);
-						tiles [c, r].hero = null;
-						anyMoved = true;
-					}
-				}
-			}
-		}
-
-		if (anyMoved) {
-			Invoke ("RenewGrid", 0.5f);
-			//Debug.Log ("Match");
-		}	
-	}*/
-
-	#endregion
-
 	#region NEW GRID CHECK & GENERATION LOGIC
 
-	void NewGridCheck (int PID)
+
+	IEnumerator NewGridCheck (int PID, float t)
 	{
+		
+		yield return new WaitForSeconds (t);
 		Slot[,] slots;
 		if (PID == 1)
-			slots = Player1slots;
+			slots = playerBoards[0].PlayerSlots;
 		else
-			slots = Player2slots;
+			slots = playerBoards[1].PlayerSlots;
 
 
 		int counter = 1;
 		//ROW CHECK///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 		for (int r = 0; r < Rows; r++) {
 			counter = 1;
+
 			for (int c = 1; c < Columns; c++) {
 				//if (!slots[c, r])
 				if (slots [c, r].PlayerID == PID)
 				if (slots [c, r].CanInteractible && slots [c - 1, r].CanInteractible) {
 					if (slots [c, r].isFilled && slots [c - 1, r].isFilled) {
-						if (slots [c, r].herotype == slots [c - 1, r].herotype) {
+						if (slots [c, r].hero.heroType == slots [c - 1, r].hero.heroType) {
+							
 							counter++;
 
 						} else {
+							//Debug.Log (counter);	
 							counter = 1;
 						}
 
+
+						//RSlot [counter] = slots [c - 1, r];
 						if (counter == 6) {
-							CheckSlotAndDeativate (slots [c, r], 6);
-							CheckSlotAndDeativate (slots [c - 1, r], 6);
-							CheckSlotAndDeativate (slots [c - 2, r], 6);
-							CheckSlotAndDeativate (slots [c - 3, r], 6);
-							CheckSlotAndDeativate (slots [c - 4, r], 6);
-							CheckSlotAndDeativate (slots [c - 5, r], 6);
-
+							MatchSlot.Clear ();
+							MatchSlot.Add (slots [c, r]);
+							MatchSlot.Add (slots [c - 1, r]);
+							MatchSlot.Add (slots [c - 2, r]);
+							MatchSlot.Add (slots [c - 3, r]);
+							MatchSlot.Add (slots [c - 4, r]);
+							MatchSlot.Add (slots [c - 5, r]);
 						} else if (counter == 5) {
-							CheckSlotAndDeativate (slots [c, r], 5);
-							CheckSlotAndDeativate (slots [c - 1, r], 5);
-							CheckSlotAndDeativate (slots [c - 2, r], 5);
-							CheckSlotAndDeativate (slots [c - 3, r], 5);
-							CheckSlotAndDeativate (slots [c - 4, r], 5);
-
+							MatchSlot.Clear ();
+							MatchSlot.Add (slots [c, r]);
+							MatchSlot.Add (slots [c - 1, r]);
+							MatchSlot.Add (slots [c - 2, r]);
+							MatchSlot.Add (slots [c - 3, r]);
+							MatchSlot.Add (slots [c - 4, r]);
 						} else if (counter == 4) {
-							CheckSlotAndDeativate (slots [c, r], 4);
-							CheckSlotAndDeativate (slots [c - 1, r], 4);
-							CheckSlotAndDeativate (slots [c - 2, r], 4);
-							CheckSlotAndDeativate (slots [c - 3, r], 4);
 
+							MatchSlot.Clear ();
+							MatchSlot.Add (slots [c, r]);
+							MatchSlot.Add (slots [c - 1, r]);
+							MatchSlot.Add (slots [c - 2, r]);
+							MatchSlot.Add (slots [c - 3, r]);
 
 						} else if (counter == 3) {
+							MatchSlot.Clear ();
+							MatchSlot.Add (slots [c, r]);
+							MatchSlot.Add (slots [c - 1, r]);
+							MatchSlot.Add (slots [c - 2, r]);
 
-							CheckSlotAndDeativate (slots [c, r], 3);
-							CheckSlotAndDeativate (slots [c - 1, r], 3);
-							CheckSlotAndDeativate (slots [c - 2, r], 3);
 						}
 
+						//Debug.Log (tiles [c, r].herotype + tiles [c, r].c + tiles [c, r].r + "");
+
+						/*if (c == Columns - 1) {
+							
+						}*/
 
 					}
+
 				}
 
 
 
 			}
+			Debug.Log("MatchSlot>" + MatchSlot.Count);
+			CheckSlotAndDeativate ();
 		}
 
 		//COLUMN CHECK///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1054,7 +958,7 @@ public class BoardManager : MonoBehaviour
 				if (slots [c, r].PlayerID == PID)
 				if (slots [c, r].CanInteractible && slots [c, r - 1].CanInteractible) {
 					//if (slots [c, r].isFilled && slots [c, r - 1].isFilled) {
-					if (slots [c, r].herotype == slots [c, r - 1].herotype) {
+					if (slots [c, r].hero.heroType == slots [c, r - 1].hero.heroType) {
 						counter++;  
 
 
@@ -1062,112 +966,182 @@ public class BoardManager : MonoBehaviour
 						counter = 1;
 					}
 
+
+					//RSlot [counter] = slots [c - 1, r];
 					if (counter == 6) {
-
-						CheckSlotAndDeativate (slots [c, r], 6);
-						CheckSlotAndDeativate (slots [c, r - 1], 6);
-						CheckSlotAndDeativate (slots [c, r - 2], 6);
-						CheckSlotAndDeativate (slots [c, r - 3], 6);
-						CheckSlotAndDeativate (slots [c, r - 4], 6);
-						CheckSlotAndDeativate (slots [c, r - 5], 6);
-
+						MatchSlot.Clear ();
+						MatchSlot.Add (slots [c, r]);
+						MatchSlot.Add (slots [c, r - 1]);
+						MatchSlot.Add (slots [c, r - 2]);
+						MatchSlot.Add (slots [c, r - 3]);
+						MatchSlot.Add (slots [c, r - 4]);
+						MatchSlot.Add (slots [c, r - 5]);
 					} else if (counter == 5) {
-						CheckSlotAndDeativate (slots [c, r], 5);
-						CheckSlotAndDeativate (slots [c, r - 1], 5);
-						CheckSlotAndDeativate (slots [c, r - 2], 5);
-						CheckSlotAndDeativate (slots [c, r - 3], 5);
-						CheckSlotAndDeativate (slots [c, r - 4], 5);
-
+						MatchSlot.Clear ();
+						MatchSlot.Add (slots [c, r]);
+						MatchSlot.Add (slots [c, r - 1]);
+						MatchSlot.Add (slots [c, r - 2]);
+						MatchSlot.Add (slots [c, r - 3]);
+						MatchSlot.Add (slots [c, r - 4]);
 					} else if (counter == 4) {
-						CheckSlotAndDeativate (slots [c, r], 4);
-						CheckSlotAndDeativate (slots [c, r - 1], 4);
-						CheckSlotAndDeativate (slots [c, r - 2], 4);
-						CheckSlotAndDeativate (slots [c, r - 3], 4);
 
+						MatchSlot.Clear ();
+						MatchSlot.Add (slots [c, r]);
+						MatchSlot.Add (slots [c, r - 1]);
+						MatchSlot.Add (slots [c, r - 2]);
+						MatchSlot.Add (slots [c, r - 3]);
 
 					} else if (counter == 3) {
+						MatchSlot.Clear ();
+						MatchSlot.Add (slots [c, r]);
+						MatchSlot.Add (slots [c, r - 1]);
+						MatchSlot.Add (slots [c, r - 2]);
 
-						CheckSlotAndDeativate (slots [c, r], 3);
-						CheckSlotAndDeativate (slots [c, r - 1], 3);
-						CheckSlotAndDeativate (slots [c, r - 2], 3);
 					}
-					//}
+						
 
 				}
 			}
+			CheckSlotAndDeativate ();
 
 		}
+
+
+		//StartCoroutine (delay ());
 
 		if (renewBoard) {
-			RenewGrid ();
+			//t = false;
+			StartCoroutine (RenewGrid (0));
 			renewBoard = false;
 		}
-
 	}
 
-	void CheckSlotAndDeativate (Slot sl, int counter)
+	/*IEnumerator delay(float f)
 	{
-		Debug.Log (counter);
-		if (sl.isFilled) {
-			sl.hero.SetActive (false);
-			sl.CanInteractible = false;
-			sl.MatchCount = counter;
-			sl.isFilled = false;
-			renewBoard = true;
+		if (renewBoard) {
+			//t = false;
+			StartCoroutine (RenewGrid (0));
+			renewBoard = false;
 		}
+	}*/
 
+	void CheckSlotAndDeativate ()
+	{
+		int i = 0;
+		for (i = 0; i < MatchSlot.Count; i++) {
+			if (MatchSlot [i].isFilled) {
+				MatchSlot [i].hero.gameObject.SetActive (false);
+				MatchSlot [i].CanInteractible = false;
+				MatchSlot [i].MatchCount = MatchSlot.Count;
+				MatchSlot [i].isFilled = false;
+				renewBoard = true;
+				MatchSlot [i].hero.GotMatch (MatchSlot.Count);
+			}
+		}
+		MatchSlot.Clear ();
 	}
 
 
-	void RenewGrid ()
+
+	//bool t = false;
+
+	IEnumerator RenewGrid (float k)
 	{
 		anyMoved = false;
-		PoolShuffle ();
+//		PoolShuffle (); //TODO
 
-		for (int r = 0; r < Rows; r++) {
-			for (int c = 0; c < Columns; c++) {
+		yield return new WaitForSeconds (k);
 
-				//Debug.Log (tiles [c, r].herotype + tiles [c, r].c + tiles [c, r].r);
+		if (PlayerControlID == 1)
+		{
+			for (int r = 0; r < Rows; r++) 
+			{
+				for (int c = 0; c < Columns; c++) 
+				{
 
-				if (!tiles [c, r].isFilled) {
-					if (r == 0) {
-						for (int n = 0; n < heroPool.Count; n++) {
-							GameObject o = heroPool [n];
+					if (!tiles [c, r].isFilled) 
+					{
+						if (r == 0) 
+						{
 
-							if (!o.activeSelf) {
-								o.transform.position = tiles [c, r].position;
-								//o.animation
-								o.SetActive (true);
-								tiles [c, r].hero = o;
-								n = heroPool.Count + 1;
-								tiles [c, r].Col (Color.red);
-							}
+							GameObject o = Instantiate(HeroesTypes [UnityEngine.Random.Range(0, Enum.GetNames(typeof(HeroType)).Length)]);//heroPool [n].gameObject;
+							o.transform.position = tiles [c, r].position;
+							o.SetActive (true);
+							tiles [c, r].hero = o.GetComponent<Heroes>();
+							tiles [c, r].Col (Color.red);
+
 							tiles [c, r].Fill (o, tiles [c, r].position, PlayerControlID);
-
 						}
-					}
 
 
-					if (r - 1 >= 0) {
+						if (r - 1 >= 0) 
+						{
 						
-						SingleHeroMove (tiles [c, r - 1].hero, tiles [c, r - 1], tiles [c, r], false);
-						tiles [c, r].Fill (tiles [c, r - 1].hero, tiles [c, r].position, tiles [c, r].PlayerID);
-						if (tiles [c, r - 1].isFilled)
-							tiles [c, r - 1].isFilled = false;
+							SingleHeroMove (tiles [c, r - 1].hero.gameObject, tiles [c, r - 1], tiles [c, r], false);
+							tiles [c, r].Fill (tiles [c, r - 1].hero.gameObject, tiles [c, r].position, tiles [c, r].PlayerID);
+							if (tiles [c, r - 1].isFilled)
+								tiles [c, r - 1].isFilled = false;
 
-						anyMoved = true;
+							anyMoved = true;
+						} 
 					} 
 
-					//Invoke ("RenewGrid", cascadecheckSpeed);
-				} 
+				}
 
 			}
+		}
+		if (PlayerControlID == 2)
+		{
+			for (int r = 0; r < Rows; r++) 
+			{
+				for (int c = 0; c < Columns; c++) 
+				{
+					if (!tiles [c, r].isFilled) 
+					{
+						if (r == 0)
+						{
+							GameObject o = Instantiate(HeroesTypes [UnityEngine.Random.Range(0, Enum.GetNames(typeof(HeroType)).Length)]);
+							o.transform.position = tiles [c, r].position;
+							o.SetActive (true);
+							tiles [c, r].hero = o.GetComponent<Heroes>();
+							tiles [c, r].Col (Color.red);
+							tiles [c, r].Fill (o, tiles [c, r].position, PlayerControlID);
+						}
 
+
+						if (r - 1 >= 0) 
+						{
+
+							SingleHeroMove (tiles [c, r - 1].hero.gameObject, tiles [c, r - 1], tiles [c, r], false);
+							tiles [c, r].Fill (tiles [c, r - 1].hero.gameObject, tiles [c, r].position, tiles [c, r].PlayerID);
+							if (tiles [c, r - 1].isFilled)
+								tiles [c, r - 1].isFilled = false;
+
+							anyMoved = true;
+						} 
+					} 
+
+				}
+
+			}
 		}
 
-		if (anyMoved)
-			Invoke ("RenewGrid", cascadecheckSpeed);
+		if (anyMoved) 
+		{
+			StartCoroutine (RenewGrid (cascadecheckSpeed));//restart ();
 
+		} 
+		else 
+		{		
+			StartCoroutine (NewGridCheck (PlayerControlID, 0));
+		}
+
+	}
+
+	void restart ()
+	{
+		//yield return new WaitForSeconds (k);
+		StartCoroutine (RenewGrid (cascadecheckSpeed));
 	}
 
 	void SingleHeroMove (GameObject objectToMove, Slot startslot, Slot endslot, bool wantDataTransfer)
@@ -1185,7 +1159,167 @@ public class BoardManager : MonoBehaviour
 	}
 
 	#endregion
+
+	public bool matched = false;
+
+	void StartCheck (int PID)
+	{
+
+
+		int counter = 1;
+		//ROW CHECK///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+		for (int r = 0; r < Rows; r++) {
+			counter = 1;
+
+			for (int c = 1; c < Columns; c++) {
+				//if (!slots[c, r])
+				if (tiles [c, r].PlayerID == PID)
+				if (tiles [c, r].CanInteractible && tiles [c - 1, r].CanInteractible) {
+					if (tiles [c, r].isFilled && tiles [c - 1, r].isFilled) {
+						if (tiles [c, r].hero.heroType == tiles [c - 1, r].hero.heroType) {
+
+							counter++;
+
+						} else {
+							//Debug.Log (counter);	
+							counter = 1;
+						}
+
+
+						//RSlot [counter] = slots [c - 1, r];
+						if (counter == 6) {
+							
+							fillother (tiles [c, r]);
+							fillother (tiles [c - 1, r]);
+							fillother (tiles [c - 2, r]);
+							fillother (tiles [c - 3, r]);
+							fillother (tiles [c - 4, r]);
+							fillother (tiles [c - 5, r]);
+
+						} else if (counter == 5) {
+							
+							fillother (tiles [c, r]);
+							fillother (tiles [c - 1, r]);
+							fillother (tiles [c - 2, r]);
+							fillother (tiles [c - 3, r]);
+							fillother (tiles [c - 4, r]);
+
+						} else if (counter == 4) {
+
+
+							fillother (tiles [c, r]);
+							fillother (tiles [c - 1, r]);
+							fillother (tiles [c - 2, r]);
+							fillother (tiles [c - 3, r]);
+
+
+						} else if (counter == 3) {
+							
+							fillother (tiles [c, r]);
+							fillother (tiles [c - 1, r]);
+							fillother (tiles [c - 2, r]);
+
+						} else
+							matched = false;
+							
+
+					}
+
+				}
+
+
+
+			}
+		}
+
+		//COLUMN CHECK///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+		for (int c = 0; c < Columns; c++) {
+			counter = 1;
+			for (int r = 1; r < Rows; r++) {
+				if (tiles [c, r].PlayerID == PID)
+				if (tiles [c, r].CanInteractible && tiles [c, r - 1].CanInteractible) {
+					//if (slots [c, r].isFilled && slots [c, r - 1].isFilled) {
+					if (tiles [c, r].hero.heroType == tiles [c, r - 1].hero.heroType) {
+						counter++;  
+
+
+					} else {
+						counter = 1;
+					}
+
+
+					//RSlot [counter] = slots [c - 1, r];
+					if (counter == 6) {
+						
+						fillother (tiles [c, r]);
+						fillother (tiles [c, r - 1]);
+						fillother (tiles [c, r - 2]);
+						fillother (tiles [c, r - 3]);
+						fillother (tiles [c, r - 4]);
+						fillother (tiles [c, r - 5]);
+
+					} else if (counter == 5) {
+						
+						fillother (tiles [c, r]);
+						fillother (tiles [c, r - 1]);
+						fillother (tiles [c, r - 2]);
+						fillother (tiles [c, r - 3]);
+						fillother (tiles [c, r - 4]);
+
+					} else if (counter == 4) {
+
+
+						fillother (tiles [c, r]);
+						fillother (tiles [c, r - 1]);
+						fillother (tiles [c, r - 2]);
+						fillother (tiles [c, r - 3]);
+
+
+					} else if (counter == 3) {
+						
+						fillother (tiles [c, r]);
+						fillother (tiles [c, r - 1]);
+						fillother (tiles [c, r - 2]);
+
+
+					} else
+						matched = false;
+
+
+
+				}
+			}
+
+		}
+
+
+
+	}
+
+
+	void fillother (Slot s)
+	{
+		matched = true;
+		s.hero.gameObject.SetActive (false);
+//		for (int n = 0; n < heroPool.Count; n++) 
+//		{
+		GameObject o = Instantiate(HeroesTypes [UnityEngine.Random.Range(0, Enum.GetNames(typeof(HeroType)).Length)]);//heroPool [n].gameObject;
+
+//			if (!o.activeSelf) {
+				o.transform.position = s.position;
+				//o.animation
+				o.SetActive (true);
+				s.hero = o.GetComponent<Heroes>();
+//				n = heroPool.Count + 1;
+				//s [c, r].Col (Color.red);
+//			}
+			s.Fill (o, s.position, PlayerControlID);
+
+//		}
+	}
 }
+
+
 
 
 

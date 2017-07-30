@@ -229,10 +229,10 @@ public class BoardCreationScript : MonoBehaviour
 
 	void SlotDataSwap (Slot s1, Slot s2)
 	{
-		GameObject temphero = s2.hero;
+		GameObject temphero = s2.hero.gameObject;
 		int tempplayerID = s2.PlayerID;
 
-		s2.Fill (s1.hero, s2.position, s1.PlayerID);
+		s2.Fill (s1.hero.gameObject, s2.position, s1.PlayerID);
 		s1.Fill (temphero, s1.position, tempplayerID);
 
 	}
@@ -247,8 +247,8 @@ public class BoardCreationScript : MonoBehaviour
 
 			SlotDataSwap (ts1, ts2);
 		} else {
-			h1 = s1.hero;
-			h2 = s2.hero;
+			h1 = s1.hero.gameObject;
+			h2 = s2.hero.gameObject;
 			ts1 = s1;
 			ts2 = s2;
 
@@ -339,7 +339,7 @@ public class BoardCreationScript : MonoBehaviour
 				//if (!slots[c, r])
 				if (slots [c, r].PlayerID == PID)
 				if (slots [c, r] != null && slots [c - 1, r] != null) {
-					if (slots [c, r].herotype == slots [c - 1, r].herotype) {
+					if (slots [c, r].hero.heroType == slots [c - 1, r].hero.heroType) {
 						counter++;
                         
 					} else {
@@ -398,7 +398,7 @@ public class BoardCreationScript : MonoBehaviour
 			for (int r = 1; r < Rows; r++) {
 				if (slots [c, r].PlayerID == PID)
 				if (slots [c, r] != null && slots [c, r - 1] != null) {
-					if (slots [c, r].herotype == slots [c, r - 1].herotype) {
+					if (slots [c, r].hero.heroType == slots [c, r - 1].hero.heroType) {
 						counter++;  
                             
 					} else {
@@ -460,7 +460,7 @@ public class BoardCreationScript : MonoBehaviour
 				//if (!slots[c, r])
 				if (slots [c, r].PlayerID == PID)
 				if (slots [c, r] != null && slots [c - 1, r] != null) {
-					if (slots [c, r].herotype == slots [c - 1, r].herotype) {
+					if (slots [c, r].hero.heroType == slots [c - 1, r].hero.heroType) {
 						counter++;
 
 					} else {
@@ -489,7 +489,7 @@ public class BoardCreationScript : MonoBehaviour
 			for (int r = 1; r < Rows; r++) {
 				if (slots [c, r].PlayerID == PID)
 				if (slots [c, r] != null && slots [c, r - 1] != null) {
-					if (slots [c, r].herotype == slots [c, r - 1].herotype) {
+					if (slots [c, r].hero.heroType == slots [c, r - 1].hero.heroType) {
 						counter++;
 
 					} else {
@@ -571,7 +571,7 @@ public class BoardCreationScript : MonoBehaviour
 	{
 		if (s.hero != null) {
 			if (s.hero != null) {
-				s.hero.SetActive (false);
+				s.hero.gameObject.SetActive (false);
 			}
 
 			s.hero = null; 
